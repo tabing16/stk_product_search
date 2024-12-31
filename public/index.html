@@ -13,13 +13,13 @@
         <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">Product Search</h1>
 
         <!-- Search Form -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <form hx-get="/search" 
-                  hx-trigger="submit"
-                  hx-target="#results"
-                  hx-indicator="#spinner"
-                  class="space-y-4"
-                  onsubmit="return validateForm(event)">
+        <div class="mb-8">
+            <form 
+                hx-get="/search" 
+                hx-target="#results"
+                hx-indicator="#spinner"
+                onsubmit="return validateForm(event)"
+            >
                 
                 <div class="flex flex-col md:flex-row gap-4">
                     <!-- Product Name Input -->
@@ -32,6 +32,7 @@
                             class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             required
                             oninput="handleInput(this)"
+                            onkeyup="handleKeyUp(event)"
                         >
                         <!-- Clear Button -->
                         <button 
@@ -51,10 +52,25 @@
                     </div>
 
                     <!-- Search Button -->
-                    <div>
-                        <button type="submit" class="w-full md:w-auto px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <div class="flex-none">
+                        <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             Search
                         </button>
+                    </div>
+
+                    <!-- Results per page selector -->
+                    <div class="flex-none">
+                        <select
+                            id="resultsPerPage"
+                            name="limit"
+                            class="block w-full px-4 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-lg"
+                            onchange="updateResultsPerPage(this.value)"
+                        >
+                            <option value="10">10 per page</option>
+                            <option value="30" selected>30 per page</option>
+                            <option value="50">50 per page</option>
+                            <option value="100">100 per page</option>
+                        </select>
                     </div>
                 </div>
             </form>
@@ -108,6 +124,20 @@
             return true;
         }
 
+        // Handle results per page change
+        function updateResultsPerPage(limit) {
+            const searchInput = document.getElementById('productName');
+            const searchTerm = searchInput.value.trim();
+            
+            if (searchTerm) {
+                // Trigger new search with updated limit
+                htmx.ajax('GET', `/search?productName=${encodeURIComponent(searchTerm)}&page=1&limit=${limit}`, {
+                    target: '#results',
+                    swap: 'innerHTML'
+                });
+            }
+        }
+
         // Handle input changes
         function handleInput(input) {
             const clearButton = document.getElementById('clearButton');
@@ -153,6 +183,21 @@
                     </tbody>
                 </table>
             `;
+        }
+
+        // Handle keyboard events
+        function handleKeyUp(event) {
+            const searchInput = event.target;
+            
+            // Check if input is empty after backspace or delete
+            if ((event.key === 'Backspace' || event.key === 'Delete') && !searchInput.value) {
+                clearSearch();
+            }
+            
+            // Submit form on Enter
+            if (event.key === 'Enter' && searchInput.value.trim()) {
+                htmx.trigger(searchInput.closest('form'), 'submit');
+            }
         }
     </script>
 </body>

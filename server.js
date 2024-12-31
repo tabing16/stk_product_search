@@ -37,11 +37,20 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Configuration
+const config = {
+    resultsPerPage: 30 // Default results per page
+};
+
 // Search endpoint
 app.get('/search', async (req, res) => {
     try {
-        const { productName } = req.query;
-        console.log('Search request:', { productName });
+        const { productName, page = 1, limit = config.resultsPerPage } = req.query;
+        const currentPage = parseInt(page);
+        const itemsPerPage = parseInt(limit);
+        const offset = (currentPage - 1) * itemsPerPage;
+
+        console.log('Search request:', { productName, page: currentPage, limit: itemsPerPage });
 
         // Validate empty search
         if (!productName || productName.trim() === '') {
@@ -70,7 +79,19 @@ app.get('/search', async (req, res) => {
             `);
         }
 
-        // Base query
+        // Get total count for pagination
+        const countQuery = `
+            SELECT COUNT(DISTINCT s.cSTKdesc) as total
+            FROM eisdata.stock s
+            LEFT JOIN eisdata.stockgroup sg ON s.cSTKfkGRP = sg.cGRPpk
+            WHERE LOWER(s.cSTKdesc) LIKE LOWER(?)
+        `;
+        
+        const [countResult] = await pool.promise().query(countQuery, [`%${productName.trim()}%`]);
+        const totalItems = countResult[0].total;
+        const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+        // Base query with pagination
         let searchQuery = `
             SELECT DISTINCT
                 s.cSTKdesc productname,
@@ -87,157 +108,153 @@ app.get('/search', async (req, res) => {
                 LEFT JOIN eisdata.invoicedetail id ON s.cSTKpk = id.cIVDfkSTK
                 LEFT JOIN eisdata.invoice i ON id.cIVDfkINV = i.cINVpk
                 LEFT JOIN eisdata.warehouse w ON i.cINVfkWHS = w.cWHSpk
-            WHERE 1=1
-        `;
-
-        const params = [];
-
-        // Add search conditions
-        if (productName && productName.trim()) {
-            searchQuery += ' AND LOWER(s.cSTKdesc) LIKE LOWER(?)';
-            params.push(`%${productName.trim()}%`);
-        }
-
-        // Add GROUP BY
-        searchQuery += `
+            WHERE LOWER(s.cSTKdesc) LIKE LOWER(?)
             GROUP BY 
                 s.cSTKdesc,
                 sg.cGRPdesc,
                 s.nstkhbeli,
                 w.cWHSdesc
             ORDER BY s.cSTKdesc
-            LIMIT 100
+            LIMIT ? OFFSET ?
         `;
 
-        console.log('Executing query:', searchQuery.replace(/\s+/g, ' '));
-        console.log('Parameters:', params);
+        const [results] = await pool.promise().query(searchQuery, [`%${productName.trim()}%`, itemsPerPage, offset]);
+        console.log(`Found ${results.length} results on page ${currentPage}`);
 
-        // First, let's check if we have any products at all
-        const [countResult] = await pool.promise().query('SELECT COUNT(*) as count FROM eisdata.stock');
-        console.log('Total products in stock table:', countResult[0].count);
+        // Generate HTML response with pagination
+        const paginationControls = `
+            <div class="flex items-center justify-between border-gray-200 bg-white px-4 py-3 sm:px-6">
+                <div class="flex flex-1 justify-between sm:hidden">
+                    ${currentPage > 1 ? `
+                        <button 
+                            hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage - 1}&limit=${itemsPerPage}"
+                            hx-target="#results"
+                            class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                            Previous
+                        </button>
+                    ` : ''}
+                    ${currentPage < totalPages ? `
+                        <button 
+                            hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage + 1}&limit=${itemsPerPage}"
+                            hx-target="#results"
+                            class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                            Next
+                        </button>
+                    ` : ''}
+                </div>
+                <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm text-gray-700">
+                            Showing <span class="font-medium">${offset + 1}</span> to <span class="font-medium">${Math.min(offset + results.length, totalItems)}</span> of <span class="font-medium">${totalItems}</span> results
+                        </p>
+                    </div>
+                    <div>
+                        <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                            ${currentPage > 1 ? `
+                                <button 
+                                    hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage - 1}&limit=${itemsPerPage}"
+                                    hx-target="#results"
+                                    class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
+                                >
+                                    <span class="sr-only">Previous</span>
+                                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            ` : ''}
 
-        // Execute the main search query
-        const [results] = await pool.promise().query(searchQuery, params);
-        console.log(`Found ${results.length} results`);
-        
-        // Log some sample results if any
-        if (results.length > 0) {
-            console.log('Sample result:', results[0]);
-        }
+                            ${Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                const pageNum = i + 1;
+                                return `
+                                    <button
+                                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${pageNum}&limit=${itemsPerPage}"
+                                        hx-target="#results"
+                                        class="relative inline-flex items-center px-4 py-2 text-sm font-semibold ${currentPage === pageNum ? 'z-10 bg-blue-600 text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}"
+                                    >
+                                        ${pageNum}
+                                    </button>
+                                `;
+                            }).join('')}
 
-        // If no results found with exact match, try broader search
-        if (results.length === 0 && productName && productName.trim()) {
-            console.log('No results found. Trying broader search...');
-            
-            // Split search term into words
-            const words = productName.trim().split(/\s+/);
-            const conditions = words.map(() => 'LOWER(s.cSTKdesc) LIKE LOWER(?)').join(' OR ');
-            
-            // Modify the query for broader search
-            let broadQuery = searchQuery.replace(
-                'AND LOWER(s.cSTKdesc) LIKE LOWER(?)',
-                `AND (${conditions})`
-            );
-            
-            // Create parameters array for broader search
-            const broadParams = words.map(word => `%${word}%`);
-            
-            console.log('Executing broader query:', broadQuery.replace(/\s+/g, ' '));
-            console.log('Broader parameters:', broadParams);
-            
-            const [broadResults] = await pool.promise().query(broadQuery, broadParams);
-            console.log(`Found ${broadResults.length} results with broader search`);
-            
-            if (broadResults.length > 0) {
-                console.log('Sample broad result:', broadResults[0]);
-            }
-            
-            // Generate HTML table rows
-            const tableHtml = `
-                <table class="min-w-full table-auto">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${broadResults.length === 0 ? `
-                            <tr class="empty-state">
-                                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
+                            ${currentPage < totalPages ? `
+                                <button 
+                                    hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage + 1}&limit=${itemsPerPage}"
+                                    hx-target="#results"
+                                    class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
+                                >
+                                    <span class="sr-only">Next</span>
+                                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            ` : ''}
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const tableHtml = `
+            <div class="space-y-4">
+                <!-- Top pagination -->
+                ${totalPages > 1 ? paginationControls : ''}
+
+                <!-- Results summary -->
+                <div class="text-sm text-gray-600">
+                    Showing ${offset + 1} to ${Math.min(offset + results.length, totalItems)} of ${totalItems} results
+                </div>
+
+                <!-- Results table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full table-auto">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
                             </tr>
-                        ` : broadResults.map(row => `
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm" data-value="${row.saldo}">${formatNumber(row.saldo)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+                        </thead>
+                        <tbody>
+                            ${results.length === 0 ? `
+                                <tr class="empty-state">
+                                    <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
+                                </tr>
+                            ` : results.map(row => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm" data-value="${row.saldo}">${formatNumber(row.saldo)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
 
-            res.send(tableHtml);
-        } else {
-            // Generate HTML table rows
-            const tableHtml = `
-                <table class="min-w-full table-auto">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${results.length === 0 ? `
-                            <tr class="empty-state">
-                                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
-                            </tr>
-                        ` : results.map(row => `
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm" data-value="${row.saldo}">${formatNumber(row.saldo)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+                <!-- Bottom pagination -->
+                ${totalPages > 1 ? paginationControls : ''}
+            </div>
+        `;
 
-            res.send(tableHtml);
-        }
+        res.send(tableHtml);
+
     } catch (error) {
         console.error('Search error:', error);
-        // Log the full error details
-        console.error('Detailed error:', {
-            message: error.message,
-            code: error.code,
-            sqlState: error.sqlState,
-            sqlMessage: error.sqlMessage,
-            sql: error.sql
-        });
-        res.status(500).json({ 
-            error: 'An error occurred during search',
-            details: error.message
-        });
+        res.status(500).send(`
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <strong class="font-bold">Error!</strong>
+                <span class="block sm:inline">An error occurred while searching. Please try again.</span>
+            </div>
+        `);
     }
 });
 
