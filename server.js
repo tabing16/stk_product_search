@@ -50,7 +50,6 @@ app.get('/search', async (req, res) => {
                 sg.cGRPdesc productcategory,
                 s.nstkhbeli price,
                 w.cWHSdesc location,
-                id.cIVDunit unit,
                 COALESCE(SUM(id.nIVDqtyin), 0) total_in,
                 COALESCE(SUM(id.nIVDqtyout), 0) total_out,
                 COALESCE(SUM(id.nIVDqtyin) - SUM(id.nIVDqtyout), 0) saldo
@@ -78,8 +77,7 @@ app.get('/search', async (req, res) => {
                 s.cSTKdesc,
                 sg.cGRPdesc,
                 s.nstkhbeli,
-                w.cWHSdesc,
-                id.cIVDunit
+                w.cWHSdesc
             ORDER BY s.cSTKdesc
             LIMIT 100
         `;
@@ -135,7 +133,6 @@ app.get('/search', async (req, res) => {
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
@@ -145,14 +142,13 @@ app.get('/search', async (req, res) => {
                     <tbody>
                         ${broadResults.length === 0 ? `
                             <tr class="empty-state">
-                                <td colspan="8" class="px-6 py-4 text-center text-gray-500">No results found</td>
+                                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
                             </tr>
                         ` : broadResults.map(row => `
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.unit || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
@@ -173,7 +169,6 @@ app.get('/search', async (req, res) => {
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
@@ -183,14 +178,13 @@ app.get('/search', async (req, res) => {
                     <tbody>
                         ${results.length === 0 ? `
                             <tr class="empty-state">
-                                <td colspan="8" class="px-6 py-4 text-center text-gray-500">No results found</td>
+                                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
                             </tr>
                         ` : results.map(row => `
                             <tr class="hover:bg-gray-50">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm">${row.unit || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
