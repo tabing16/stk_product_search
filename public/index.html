@@ -2,72 +2,141 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Product Search</title>
     <script src="https://unpkg.com/htmx.org@1.9.9"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
+    <script src="/js/pagination.js"></script>
+    <style>
+        /* Custom styles for table responsiveness */
+        .table-container {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+
+        /* Scrollbar styling */
+        .table-container::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .table-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        /* Table cell styles */
+        @media screen and (max-width: 768px) {
+            .table-container {
+                margin: 0 -1rem;
+                border-radius: 0;
+            }
+
+            td, th {
+                min-width: 120px;
+            }
+
+            td:first-child, th:first-child {
+                min-width: 200px;
+                max-width: 300px;
+            }
+
+            td:not(:first-child), th:not(:first-child) {
+                min-width: 100px;
+            }
+        }
+
+        /* Prevent text selection */
+        .no-select {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-8">
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-4xl font-bold text-center mb-8 text-gray-800">Product Search</h1>
+        <!-- Header with Home Link -->
+        <div class="flex flex-col sm:flex-row items-center justify-between mb-6 sm:mb-8 gap-4">
+            <a href="/" class="flex items-center text-blue-600 hover:text-blue-800 no-select">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span class="text-lg font-semibold">Home</span>
+            </a>
+            <h1 class="text-2xl sm:text-4xl font-bold text-center text-gray-800">Product Search</h1>
+            <div class="hidden sm:block w-24"></div>
+        </div>
 
         <!-- Search Form -->
-        <div class="mb-8">
+        <div class="mb-6 sm:mb-8">
             <form 
                 hx-get="/search" 
                 hx-target="#results"
                 hx-indicator="#spinner"
                 onsubmit="return validateForm(event)"
+                class="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center"
             >
-                
-                <div class="flex flex-col md:flex-row gap-4">
-                    <!-- Product Name Input -->
-                    <div class="flex-1 relative">
-                        <input
-                            type="text"
-                            name="productName"
-                            id="productName"
-                            placeholder="Search product name..."
-                            class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required
-                            oninput="handleInput(this)"
-                            onkeyup="handleKeyUp(event)"
-                        >
-                        <!-- Clear Button -->
-                        <button 
-                            type="button"
-                            id="clearButton"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hidden"
-                            onclick="clearSearch()"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                            </svg>
-                        </button>
-                    </div>
+                <div class="flex-grow relative">
+                    <input
+                        type="text"
+                        name="productName"
+                        id="productName"
+                        placeholder="Search product name..."
+                        class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                        oninput="handleInput(this)"
+                        onkeyup="handleKeyUp(event)"
+                    >
+                    <!-- Clear Button -->
+                    <button 
+                        type="button"
+                        id="clearButton"
+                        class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 hidden no-select"
+                        onclick="clearSearch()"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                </div>
 
-                    <!-- Search Button -->
-                    <div class="flex-none">
-                        <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            Search
-                        </button>
-                    </div>
+                <!-- Search Button -->
+                <div class="flex-none">
+                    <button type="submit" 
+                            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors no-select"
+                    >
+                        Search
+                    </button>
+                </div>
 
-                    <!-- Results per page selector -->
-                    <div class="flex-none">
-                        <select
-                            id="resultsPerPage"
-                            name="limit"
-                            class="block w-full px-4 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-lg"
-                            onchange="updateResultsPerPage(this.value)"
-                        >
-                            <option value="10">10 per page</option>
-                            <option value="30" selected>30 per page</option>
-                            <option value="50">50 per page</option>
-                            <option value="100">100 per page</option>
-                        </select>
-                    </div>
+                <!-- Results per page selector -->
+                <div class="flex-none">
+                    <select
+                        id="resultsPerPage"
+                        name="limit"
+                        class="block w-full px-4 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-lg"
+                        onchange="updateResultsPerPage(this.value)"
+                    >
+                        <option value="10">10 per page</option>
+                        <option value="30" selected>30 per page</option>
+                        <option value="50">50 per page</option>
+                        <option value="100">100 per page</option>
+                    </select>
                 </div>
             </form>
         </div>
@@ -77,24 +146,23 @@
             <div class="loader"></div>
         </div>
 
-        <!-- Results Table -->
-        <div id="results" class="bg-white rounded-lg shadow-md overflow-hidden">
-            <table class="min-w-full table-auto">
+        <!-- Results Container -->
+        <div id="results" class="table-container bg-white">
+            <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Out</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="bg-white divide-y divide-gray-200">
                     <tr class="empty-state">
-                        <td colspan="8" class="px-6 py-4 text-center text-gray-500">Use the search form above to find products</td>
+                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">Use the search form above to find products</td>
                     </tr>
                 </tbody>
             </table>
@@ -177,19 +245,19 @@
             
             // Reset the results table to empty state
             resultsDiv.innerHTML = `
-                <table class="min-w-full table-auto">
+                <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Out</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="bg-white divide-y divide-gray-200">
                         <tr class="empty-state">
                             <td colspan="7" class="px-6 py-4 text-center text-gray-500">Use the search form above to find products</td>
                         </tr>
@@ -197,6 +265,20 @@
                 </table>
             `;
         }
+
+        // Handle orientation change
+        window.addEventListener('orientationchange', function() {
+            // Add a small delay to ensure the new dimensions are available
+            setTimeout(function() {
+                const tables = document.querySelectorAll('.table-container');
+                tables.forEach(table => {
+                    // Force a reflow of the table
+                    table.style.display = 'none';
+                    table.offsetHeight; // Force a reflow
+                    table.style.display = 'block';
+                });
+            }, 100);
+        });
     </script>
 </body>
 </html>

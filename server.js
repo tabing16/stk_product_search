@@ -29,6 +29,7 @@ pool.promise().query('SELECT COUNT(*) as count FROM eisdata.stockgroup')
     });
 
 app.use(express.static('public'));
+app.use(express.static('public/js')); // Serve static files from public/js directory
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -50,7 +51,6 @@ app.get('/search', async (req, res) => {
                 sg.cGRPdesc productcategory,
                 s.nstkhbeli price,
                 w.cWHSdesc location,
-                id.cIVDunit unit,
                 COALESCE(SUM(id.nIVDqtyin), 0) total_in,
                 COALESCE(SUM(id.nIVDqtyout), 0) total_out,
                 COALESCE(SUM(id.nIVDqtyin) - SUM(id.nIVDqtyout), 0) saldo
@@ -72,14 +72,13 @@ app.get('/search', async (req, res) => {
             params.push(`%${productName.trim()}%`);
         }
 
-        // Add GROUP BY
+        // Add GROUP BY and ORDER BY
         searchQuery += `
             GROUP BY 
                 s.cSTKdesc,
                 sg.cGRPdesc,
                 s.nstkhbeli,
-                w.cWHSdesc,
-                id.cIVDunit
+                w.cWHSdesc
             ORDER BY s.cSTKdesc
             LIMIT ${limit} OFFSET ${(page - 1) * limit}
         `;
@@ -127,247 +126,109 @@ app.get('/search', async (req, res) => {
                 console.log('Sample broad result:', broadResults[0]);
             }
             
-            // Generate HTML response with pagination
-            const paginationControls = `
-                <div class="flex items-center justify-between border-gray-200 bg-white px-4 py-3 sm:px-6">
-                    <div class="flex flex-1 justify-between sm:hidden">
-                        ${page > 1 ? `
-                            <button 
-                                hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page - 1}&limit=${limit}"
-                                hx-target="#results"
-                                class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Previous
-                            </button>
-                        ` : ''}
-                        ${page < Math.ceil(countResult[0].count / limit) ? `
-                            <button 
-                                hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page + 1}&limit=${limit}"
-                                hx-target="#results"
-                                class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Next
-                            </button>
-                        ` : ''}
-                    </div>
-                    <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                        <div>
-                            <p class="text-sm text-gray-700">
-                                Showing <span class="font-medium">${(page - 1) * limit + 1}</span> to <span class="font-medium">${Math.min(page * limit, countResult[0].count)}</span> of <span class="font-medium">${countResult[0].count}</span> results
-                            </p>
-                        </div>
-                        <div>
-                            <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                                ${page > 1 ? `
-                                    <button 
-                                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page - 1}&limit=${limit}"
-                                        hx-target="#results"
-                                        class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                                    >
-                                        <span class="sr-only">Previous</span>
-                                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                ` : ''}
+            const startIndex = (page - 1) * limit + 1;
+            const endIndex = Math.min(page * limit, countResult[0].count);
+            const totalResults = countResult[0].count;
 
-                                ${Array.from({ length: Math.min(5, Math.ceil(countResult[0].count / limit)) }, (_, i) => {
-                                    const pageNum = i + 1;
-                                    return `
-                                        <button
-                                            hx-get="/search?productName=${encodeURIComponent(productName)}&page=${pageNum}&limit=${limit}"
-                                            hx-target="#results"
-                                            class="relative inline-flex items-center px-4 py-2 text-sm font-semibold ${page === pageNum ? 'z-10 bg-blue-600 text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}"
-                                        >
-                                            ${pageNum}
-                                        </button>
-                                    `;
-                                }).join('')}
+            // Generate pagination controls HTML using the new pagination function
+            const paginationControlsHtml = buildPaginationHtml(totalResults, page, productName, limit);
 
-                                ${page < Math.ceil(countResult[0].count / limit) ? `
-                                    <button 
-                                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page + 1}&limit=${limit}"
-                                        hx-target="#results"
-                                        class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                                    >
-                                        <span class="sr-only">Next</span>
-                                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                ` : ''}
-                            </nav>
-                        </div>
-                    </div>
-                </div>
-            `;
-
+            // Generate table HTML with mobile-responsive design
             const tableHtml = `
-                <div class="space-y-4">
-                    <!-- Top pagination -->
-                    ${Math.ceil(countResult[0].count / limit) > 1 ? paginationControls : ''}
-
-                    <!-- Results table -->
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full table-auto">
-                            <thead class="bg-gray-50">
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Out</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${broadResults.length === 0 ? `
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                                    <td colspan="7" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">No results found</td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                ${broadResults.length === 0 ? `
-                                    <tr class="empty-state">
-                                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
-                                    </tr>
-                                ` : broadResults.map(row => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm" data-value="${row.saldo}">${formatNumber(row.saldo)}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Bottom pagination -->
-                    ${Math.ceil(countResult[0].count / limit) > 1 ? paginationControls : ''}
+                            ` : broadResults.map(item => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.productname || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.productcategory || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatCurrency(item.price) || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.location || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.total_in) || '0'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.total_out) || '0'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.saldo) || '0'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 </div>
             `;
 
-            res.send(tableHtml);
+            // Return the complete HTML with both top and bottom pagination controls
+            res.send(`
+                <div class="space-y-6">
+                    ${paginationControlsHtml}
+                    ${tableHtml}
+                    ${paginationControlsHtml}
+                </div>
+            `);
         } else {
-            // Generate HTML response with pagination
-            const paginationControls = `
-                <div class="flex items-center justify-between border-gray-200 bg-white px-4 py-3 sm:px-6">
-                    <div class="flex flex-1 justify-between sm:hidden">
-                        ${page > 1 ? `
-                            <button 
-                                hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page - 1}&limit=${limit}"
-                                hx-target="#results"
-                                class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Previous
-                            </button>
-                        ` : ''}
-                        ${page < Math.ceil(countResult[0].count / limit) ? `
-                            <button 
-                                hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page + 1}&limit=${limit}"
-                                hx-target="#results"
-                                class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Next
-                            </button>
-                        ` : ''}
-                    </div>
-                    <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                        <div>
-                            <p class="text-sm text-gray-700">
-                                Showing <span class="font-medium">${(page - 1) * limit + 1}</span> to <span class="font-medium">${Math.min(page * limit, countResult[0].count)}</span> of <span class="font-medium">${countResult[0].count}</span> results
-                            </p>
-                        </div>
-                        <div>
-                            <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                                ${page > 1 ? `
-                                    <button 
-                                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page - 1}&limit=${limit}"
-                                        hx-target="#results"
-                                        class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                                    >
-                                        <span class="sr-only">Previous</span>
-                                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                            <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                ` : ''}
+            const startIndex = (page - 1) * limit + 1;
+            const endIndex = Math.min(page * limit, countResult[0].count);
+            const totalResults = countResult[0].count;
 
-                                ${Array.from({ length: Math.min(5, Math.ceil(countResult[0].count / limit)) }, (_, i) => {
-                                    const pageNum = i + 1;
-                                    return `
-                                        <button
-                                            hx-get="/search?productName=${encodeURIComponent(productName)}&page=${pageNum}&limit=${limit}"
-                                            hx-target="#results"
-                                            class="relative inline-flex items-center px-4 py-2 text-sm font-semibold ${page === pageNum ? 'z-10 bg-blue-600 text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'}"
-                                        >
-                                            ${pageNum}
-                                        </button>
-                                    `;
-                                }).join('')}
+            // Generate pagination controls HTML using the new pagination function
+            const paginationControlsHtml = buildPaginationHtml(totalResults, page, productName, limit);
 
-                                ${page < Math.ceil(countResult[0].count / limit) ? `
-                                    <button 
-                                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${page + 1}&limit=${limit}"
-                                        hx-target="#results"
-                                        class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0"
-                                    >
-                                        <span class="sr-only">Next</span>
-                                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                ` : ''}
-                            </nav>
-                        </div>
-                    </div>
-                </div>
-            `;
-
+            // Generate table HTML with mobile-responsive design
             const tableHtml = `
-                <div class="space-y-4">
-                    <!-- Top pagination -->
-                    ${Math.ceil(countResult[0].count / limit) > 1 ? paginationControls : ''}
-
-                    <!-- Results table -->
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full table-auto">
-                            <thead class="bg-gray-50">
+                <div class="overflow-x-auto border rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Out</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${results.length === 0 ? `
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
+                                    <td colspan="7" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">No results found</td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                ${results.length === 0 ? `
-                                    <tr class="empty-state">
-                                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">No results found</td>
-                                    </tr>
-                                ` : results.map(row => `
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productname || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.productcategory || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatCurrency(row.price)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${row.location || '-'}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_in)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm">${formatNumber(row.total_out)}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm" data-value="${row.saldo}">${formatNumber(row.saldo)}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Bottom pagination -->
-                    ${Math.ceil(countResult[0].count / limit) > 1 ? paginationControls : ''}
+                            ` : results.map(item => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.productname || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.productcategory || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatCurrency(item.price) || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.location || '-'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.total_in) || '0'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.total_out) || '0'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(item.saldo) || '0'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 </div>
             `;
 
-            res.send(tableHtml);
+            // Return the complete HTML with both top and bottom pagination controls
+            res.send(`
+                <div class="space-y-6">
+                    ${paginationControlsHtml}
+                    ${tableHtml}
+                    ${paginationControlsHtml}
+                </div>
+            `);
         }
     } catch (error) {
         console.error('Search error:', error);
@@ -397,6 +258,123 @@ function formatCurrency(value) {
 // Helper function to format numbers
 function formatNumber(value) {
     return new Intl.NumberFormat('id-ID').format(value || 0);
+}
+
+// Pagination function with improved logic
+function buildPaginationHtml(totalResults, currentPage, productName, limit) {
+    const totalPages = Math.ceil(totalResults / limit);
+    currentPage = parseInt(currentPage);
+    
+    // Calculate the range of page numbers to show
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    
+    // Adjust the start if we're near the end
+    if (endPage - startPage < 4) {
+        startPage = Math.max(1, endPage - 4);
+    }
+
+    // Generate the page buttons
+    const pageButtons = [];
+    
+    // Add first page and ellipsis if necessary
+    if (startPage > 1) {
+        pageButtons.push(createPageButton(1, currentPage, productName, limit));
+        if (startPage > 2) {
+            pageButtons.push('<span class="relative inline-flex items-center px-4 py-2 text-sm text-gray-700">...</span>');
+        }
+    }
+    
+    // Add page numbers
+    for (let i = startPage; i <= endPage; i++) {
+        pageButtons.push(createPageButton(i, currentPage, productName, limit));
+    }
+    
+    // Add last page and ellipsis if necessary
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            pageButtons.push('<span class="relative inline-flex items-center px-4 py-2 text-sm text-gray-700">...</span>');
+        }
+        pageButtons.push(createPageButton(totalPages, currentPage, productName, limit));
+    }
+
+    const paginationControlsHtml = `
+        <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+            <div class="text-sm text-gray-600">
+                Showing ${totalResults === 0 ? 0 : (currentPage - 1) * limit + 1} to ${Math.min(currentPage * limit, totalResults)} of ${totalResults} results
+            </div>
+            <div class="inline-flex items-center gap-2">
+                ${currentPage > 1 ? `
+                    <button
+                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage - 1}&limit=${limit}"
+                        hx-target="#results"
+                        class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 focus:z-10"
+                    >
+                        <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Previous
+                    </button>
+                ` : `
+                    <button
+                        class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-300 bg-white border border-gray-300 rounded-l-md cursor-not-allowed"
+                        disabled
+                    >
+                        <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Previous
+                    </button>
+                `}
+                
+                ${pageButtons.join('')}
+                
+                ${currentPage < totalPages ? `
+                    <button
+                        hx-get="/search?productName=${encodeURIComponent(productName)}&page=${currentPage + 1}&limit=${limit}"
+                        hx-target="#results"
+                        class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-r-md hover:bg-gray-50 focus:z-10"
+                    >
+                        Next
+                        <svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                ` : `
+                    <button
+                        class="relative inline-flex items-center px-3 py-2 text-sm font-medium text-gray-300 bg-white border border-gray-300 rounded-r-md cursor-not-allowed"
+                        disabled
+                    >
+                        Next
+                        <svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                `}
+            </div>
+        </div>
+    `;
+
+    return paginationControlsHtml;
+}
+
+// Helper function to create page button
+function createPageButton(pageNum, currentPage, productName, limit) {
+    const isActive = currentPage === pageNum;
+    return `
+        <button
+            hx-get="/search?productName=${encodeURIComponent(productName)}&page=${pageNum}&limit=${limit}"
+            hx-target="#results"
+            class="relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                isActive 
+                ? 'z-10 bg-blue-600 text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' 
+                : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+            }"
+            ${isActive ? 'aria-current="page"' : ''}
+        >
+            ${pageNum}
+        </button>
+    `;
 }
 
 app.listen(port, () => {
