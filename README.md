@@ -20,7 +20,7 @@ A modern web application for searching and managing product inventory with real-
 - **Backend:**
   - Node.js
   - Express.js
-  - PostgreSQL
+  - MySQL
   - node-postgres for database connection
 
 ## Prerequisites
