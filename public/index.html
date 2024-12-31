@@ -15,10 +15,11 @@
         <!-- Search Form -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
             <form hx-get="/search" 
-                  hx-trigger="submit, input[name='productName'] changed delay:500ms"
+                  hx-trigger="submit"
                   hx-target="#results"
                   hx-indicator="#spinner"
-                  class="space-y-4">
+                  class="space-y-4"
+                  onsubmit="return validateForm(event)">
                 
                 <div class="flex flex-col md:flex-row gap-4">
                     <!-- Product Name Input -->
@@ -26,9 +27,15 @@
                         <input
                             type="text"
                             name="productName"
+                            id="productName"
                             placeholder="Search product name..."
                             class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
                         >
+                        <!-- Validation Message -->
+                        <div id="validationMessage" class="mt-2 text-red-500 text-sm hidden">
+                            Please enter a search term
+                        </div>
                     </div>
 
                     <!-- Search Button -->
@@ -68,5 +75,34 @@
             </table>
         </div>
     </div>
+    <script>
+        function validateForm(event) {
+            const searchInput = document.getElementById('productName');
+            const validationMessage = document.getElementById('validationMessage');
+            
+            if (!searchInput.value.trim()) {
+                event.preventDefault();
+                validationMessage.classList.remove('hidden');
+                
+                // Hide the message after 3 seconds
+                setTimeout(() => {
+                    validationMessage.classList.add('hidden');
+                }, 3000);
+                
+                return false;
+            }
+            
+            validationMessage.classList.add('hidden');
+            return true;
+        }
+
+        // Also validate on input to hide message when user starts typing
+        document.getElementById('productName').addEventListener('input', function() {
+            const validationMessage = document.getElementById('validationMessage');
+            if (this.value.trim()) {
+                validationMessage.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 </html>
