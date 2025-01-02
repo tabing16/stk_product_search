@@ -86,9 +86,26 @@ app.get('/search', async (req, res) => {
         console.log('Executing query:', searchQuery.replace(/\s+/g, ' '));
         console.log('Parameters:', params);
 
-        // First, let's check if we have any products at all
-        const [countResult] = await pool.promise().query('SELECT COUNT(*) as count FROM eisdata.stock');
-        console.log('Total products in stock table:', countResult[0].count);
+        // Get the total count of filtered results
+        let countQuery = `
+            SELECT COUNT(DISTINCT s.cSTKdesc) as count
+            FROM 
+                eisdata.stock s
+                LEFT JOIN eisdata.stockgroup sg ON s.cSTKfkGRP = sg.cGRPpk
+                LEFT JOIN eisdata.stockdetail sd ON s.cSTKpk = sd.cSTDfkSTK
+                LEFT JOIN eisdata.invoicedetail id ON s.cSTKpk = id.cIVDfkSTK
+                LEFT JOIN eisdata.invoice i ON id.cIVDfkINV = i.cINVpk
+                LEFT JOIN eisdata.warehouse w ON i.cINVfkWHS = w.cWHSpk
+            WHERE 1=1
+        `;
+
+        if (productName && productName.trim()) {
+            countQuery += ' AND LOWER(s.cSTKdesc) LIKE LOWER(?)';
+        }
+
+        const [filteredCount] = await pool.promise().query(countQuery, params);
+        const totalFilteredResults = filteredCount[0].count;
+        console.log('Total filtered results:', totalFilteredResults);
 
         // Execute the main search query
         const [results] = await pool.promise().query(searchQuery, params);
@@ -127,8 +144,8 @@ app.get('/search', async (req, res) => {
             }
             
             const startIndex = (page - 1) * limit + 1;
-            const endIndex = Math.min(page * limit, countResult[0].count);
-            const totalResults = countResult[0].count;
+            const endIndex = Math.min(page * limit, totalFilteredResults);
+            const totalResults = totalFilteredResults;
 
             // Generate pagination controls HTML using the new pagination function
             const paginationControlsHtml = buildPaginationHtml(totalResults, page, productName, limit);
@@ -179,8 +196,8 @@ app.get('/search', async (req, res) => {
             `);
         } else {
             const startIndex = (page - 1) * limit + 1;
-            const endIndex = Math.min(page * limit, countResult[0].count);
-            const totalResults = countResult[0].count;
+            const endIndex = Math.min(page * limit, totalFilteredResults);
+            const totalResults = totalFilteredResults;
 
             // Generate pagination controls HTML using the new pagination function
             const paginationControlsHtml = buildPaginationHtml(totalResults, page, productName, limit);
